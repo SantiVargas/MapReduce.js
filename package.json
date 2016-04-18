@@ -1,0 +1,11 @@
+{
+  "name": "MapReduce.js",
+  "version": "0.1.0",
+  "description": "A Javascript Implementation of MapReduce",
+  "dependencies": {
+    "express": "~4.2.x",
+    "multer": "~1.1.0",
+    "lodash": "~4.11.0",
+    "body-parser": "~1.15.0"
+  }
+}
