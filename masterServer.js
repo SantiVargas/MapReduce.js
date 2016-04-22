@@ -109,8 +109,6 @@ app.post('/upload/:extension/:fileName', function(req, res, next) {
   genericFileUploader.single(fileFieldName)(req, res, next);
 }, function(req, res) {
   //After uploading
-  //Reset storage to default values
-  resetStorageValues();
   return res.send('Congrats');
 });
 
@@ -137,6 +135,8 @@ function evenSequentialDistributer(numOfChunks, array) {
 //   }]
 //Get Input
 app.post('/mapperInput', function(req, res) {
+  //Reset storage to default values
+  resetStorageValues();
   //Get the key value pairs from the input
   var kvpairs = req.body;
   //Predistribute the mapper pairs
