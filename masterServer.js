@@ -212,14 +212,16 @@ app.get('/reducerInput', function(req, res) {
     //Partition Stuff Before Reducing
     //Combiner
     var unCombinedPairs = getReducerPairs();
-    var kvPairs = combiner(unCombinedPairs);
+    var combinedPairs = combiner(unCombinedPairs);
     //Sorter
-    sort(kvPairs);
+    sort(combinedPairs);
     app.locals.partitioned = true;
-    setReducerPairs(naiveModuloPartitioner(kvPairs, numberOfReducers));
+    setReducerPairs(naiveModuloPartitioner(combinedPairs, numberOfReducers));
   }
-  var result = getReducerPairs();
-  //Return the kvPairs
+  var kVPairs = getReducerPairs();
+  var kV = kVPairs.shift();
+  var result = kV ? kV : [];
+  //Return the list
   return res.json(result);
 });
 
