@@ -32,27 +32,37 @@ app.use(function(req, res, next) {
 //Reducer
 //Output
 
-//Set flag
-app.locals.partitioned = false;
+//App.Locals Values/Functions
+function setLocals(key, value) {
+  app.locals[key] = value;
+}
 
-//KVPairs storage
+function getLocals(key) {
+  return app.locals[key];
+}
+
+//Storage Values/Functions
+var partitionedFlagDefault = false;
+var mapperDataDefault = [];
+var reducerDataDefault = [];
 var mapperDataKey = 'mapperPairs';
-var reducerDataKey = 'reducerPairs'
+var reducerDataKey = 'reducerPairs';
+var partitionedFlagKey = 'partitioned';
 
 function setMapperPairs(kvList) {
-  app.locals[mapperDataKey] = kvList;
+  setLocals(mapperDataKey, kvList);
 }
 
 function getMapperPairs() {
-  return app.locals[mapperDataKey];
-}
-
-function getReducerPairs() {
-  return app.locals[reducerDataKey];
+  return getLocals(apperDataKey);
 }
 
 function setReducerPairs(kvList) {
-  app.locals[reducerDataKey] = kvList;
+  setLocals(reducerDataKey, kvList);
+}
+
+function getReducerPairs() {
+  return getLocals(reducerDataKey);
 }
 
 function addToReducerPairs(kvPairList) {
@@ -62,6 +72,23 @@ function addToReducerPairs(kvPairList) {
   pairs.push(kvPairList);
   //Save the new value
   setReducerPairs(pairs);
+}
+
+function setPartitionedFlag(value) {
+  setLocals(partitionedFlagKey, value);
+}
+
+function getPartitionedFlag() {
+  return getLocals(partitionedFlagKey);
+}
+
+function resetStorageValues() {
+  //Clear stored mapper data
+  setMapperPairs(mapperDataDefault);
+  //Clear reducer data
+  setReducerPairs(reducerDataDefault);
+  //Reset flags to default values
+  setPartitionedFlag(partitionedFlagDefault);
 }
 
 //Endpoint to upload a file by name and extension
@@ -82,8 +109,8 @@ app.post('/upload/:extension/:fileName', function(req, res, next) {
   genericFileUploader.single(fileFieldName)(req, res, next);
 }, function(req, res) {
   //After uploading
-  //Clear stored mapper data
-  setMapperPairs([]);
+  //Reset storage to default values
+  resetStorageValues();
   return res.send('Congrats');
 });
 
@@ -208,14 +235,14 @@ function naiveModuloPartitioner(kVPairList, numOfChunks) {
 //Serve Reducer Input
 //ToDo: Move partitioning to the mapperOutput endpoint. Partition right after recieving input
 app.get('/reducerInput', function(req, res) {
-  if (!app.locals.partitioned) {
+  if (!getPartitionedFlag()) {
     //Partition Stuff Before Reducing
     //Combiner
     var unCombinedPairs = getReducerPairs();
     var combinedPairs = combiner(unCombinedPairs);
     //Sorter
     sort(combinedPairs);
-    app.locals.partitioned = true;
+    setPartitionedFlag(true);
     setReducerPairs(naiveModuloPartitioner(combinedPairs, numberOfReducers));
   }
   var kVPairs = getReducerPairs();
