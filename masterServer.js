@@ -33,6 +33,7 @@ app.use(function(req, res, next) {
 //Output
 
 //App.Locals Values/Functions
+//ToDo: Keys could be stored in some other storage mechanism
 function setLocals(key, value) {
   app.locals[key] = value;
 }
@@ -42,12 +43,13 @@ function getLocals(key) {
 }
 
 //Storage Values/Functions
-var partitionedFlagDefault = false;
 var mapperDataDefault = [];
-var reducerDataDefault = [];
+var reducerDataDefault = {
+  keys: {},
+  partitions: []
+};
 var mapperDataKey = 'mapperPairs';
 var reducerDataKey = 'reducerPairs';
-var partitionedFlagKey = 'partitioned';
 
 function setMapperPairs(kvList) {
   setLocals(mapperDataKey, kvList);
@@ -57,38 +59,78 @@ function getMapperPairs() {
   return getLocals(apperDataKey);
 }
 
-function setReducerPairs(kvList) {
+function setReducerData(kvList) {
   setLocals(reducerDataKey, kvList);
 }
 
-function getReducerPairs() {
+function getReducerData() {
   return getLocals(reducerDataKey);
 }
 
-function addToReducerPairs(kvPairList) {
-  //Get the value
-  var pairs = getReducerPairs() || [];
-  //Add the value
-  pairs.push(kvPairList);
-  //Save the new value
-  setReducerPairs(pairs);
-}
-
-function setPartitionedFlag(value) {
-  setLocals(partitionedFlagKey, value);
-}
-
-function getPartitionedFlag() {
-  return getLocals(partitionedFlagKey);
+function getReducerPartitions() {
+  return getReducerData().partitions;
 }
 
 function resetStorageValues() {
   //Clear stored mapper data
   setMapperPairs(mapperDataDefault);
   //Clear reducer data
-  setReducerPairs(reducerDataDefault);
-  //Reset flags to default values
-  setPartitionedFlag(partitionedFlagDefault);
+  setReducerData(reducerDataDefault);
+}
+
+//Combining, Partitioning, and Distributing Functions
+function partitionCombiner(currentData, newPairs, numOfPartitions, callback) {
+  currentData = currentData || reducerDataDefault;
+  //Get the value
+  newPairs.forEach(function(current) {
+    //Partitioner
+    var key = current.key;
+    //Assign the key to a partition
+    if (_.isUndefined(currentData.keys[key])) {
+      var objKeys = Object.keys(currentData.keys);
+      var index = objKeys.length % numOfPartitions;
+      currentData.keys[key] = index;
+
+      //Create the partition if it doesnt exist
+      if (!currentData.partitions[index]) {
+        currentData.partitions[index] = [];
+      }
+    }
+    //Save the data to its partition
+    var partitionNumber = currentData.keys[key];
+    currentData.partitions[partitionNumber].push(current);
+  });
+  return callback(currentData);
+}
+
+function naiveModuloPartitioner(kVPairList, numOfChunks) {
+  var groupedList = _.groupBy(kVPairList, function(obj) {
+    return obj.key;
+  });
+  var partitionedList = [];
+  var keys = Object.keys(groupedList);
+  keys.forEach(function(value, index) {
+    var newIndex = index % numOfChunks;
+    if (!partitionedList[newIndex]) {
+      partitionedList[newIndex] = [];
+    }
+
+    partitionedList[newIndex] = partitionedList[newIndex].concat(groupedList[value]);
+  });
+  return partitionedList;
+}
+
+function evenSequentialDistributer(numOfChunks, array) {
+  var length = array.length;
+  var elementsPerChunk = Math.floor(length / numOfChunks);
+  var chunksWithRemainder = length % numOfChunks;
+  var chunkedArray = [];
+  for (var i = 0; i < numOfChunks; i++) {
+    var startingIndex = elementsPerChunk * i;
+    var endingIndex = startingIndex + elementsPerChunk + (i < chunksWithRemainder);
+    chunkedArray.push(array.slice(startingIndex, endingIndex));
+  }
+  return chunkedArray;
 }
 
 //Endpoint to upload a file by name and extension
@@ -112,19 +154,6 @@ app.post('/upload/:extension/:fileName', function(req, res, next) {
   return res.send('Congrats');
 });
 
-function evenSequentialDistributer(numOfChunks, array) {
-  var length = array.length;
-  var elementsPerChunk = Math.floor(length / numOfChunks);
-  var chunksWithRemainder = length % numOfChunks;
-  var chunkedArray = [];
-  for (var i = 0; i < numOfChunks; i++) {
-    var startingIndex = elementsPerChunk * i;
-    var endingIndex = startingIndex + elementsPerChunk + (i < chunksWithRemainder);
-    chunkedArray.push(array.slice(startingIndex, endingIndex));
-  }
-  return chunkedArray;
-}
-
 //Sample JSON Input
 // [{
 //     "key": "hamlet.txt",
@@ -138,24 +167,20 @@ app.post('/mapperInput', function(req, res) {
   //Reset storage to default values
   resetStorageValues();
   //Get the key value pairs from the input
-  var kvpairs = req.body;
+  var kVPairs = req.body;
   //Predistribute the mapper pairs
-  var kvChunks = evenSequentialDistributer(numberOfMappers, kvpairs);
-  //Store the input across requests in app locals
-  //ToDo: This should be stored in some other storage mechanism
-  setMapperPairs(kvChunks);
-  console.log(getMapperPairs())
+  var kVChunks = evenSequentialDistributer(numberOfMappers, kVPairs);
+  //Store the input
+  setMapperPairs(kVChunks);
   return res.send("Recieved Input");
 });
 
 //Serve Mapper Input
 app.get('/mapperInput', function(req, res) {
   //Get all key value pairs
-  var kvpairs = getMapperPairs();
-  //Get one key value from the list and add default values of null
-  //ToDo: Create algorithm to dynamically adjust how many kvpairs are served
-  var kv = kvpairs.shift();
-  var result = kv ? kv : [];
+  var kVPairs = getMapperPairs();
+  var kV = kVPairs.shift();
+  var result = kV ? kV : [];
   //Return the list
   return res.json(result);
 });
@@ -183,69 +208,16 @@ app.get('/mapperInput', function(req, res) {
 //Recieve Mapper Output
 app.post('/mapperOutput', function(req, res) {
   //Get the key value pairs from the input
-  var kvPairs = req.body;
-  //Store the input across requests in app locals... This should be stored in some other storage mechanism
-  addToReducerPairs(kvPairs);
-  //ToDo: Perform some partitioning work here. Do it in the background
+  var kVPairs = req.body;
+  //Store the input
+  //ToDo: Ensure that multiple calls does not lose data... Hmm, reminds me of message queues and event driven stuff
+  partitionCombiner(getReducerData(), kVPairs, numberOfReducers, setReducerData);
   return res.send("Recieved Input");
 });
 
-//Taken from https://github.com/jschanker/simplified-mapreduce-wordcount/blob/master/wordcount.js
-function flatten(itemList) {
-  return itemList.reduce(function(arr, list) {
-    return arr.concat(list);
-  });
-}
-
-function combiner(kVPairList) {
-  return flatten(kVPairList);
-}
-
-//Taken from https://github.com/jschanker/simplified-mapreduce-wordcount/blob/master/wordcount.js
-function sort(kVPairList) {
-  kVPairList.sort(function(kVPair1, kVPair2) {
-    var val = 0;
-    if (kVPair1.key < kVPair2.key) {
-      val = -1;
-    } else if (kVPair1.key > kVPair2.key) {
-      val = 1;
-    }
-
-    return val;
-  });
-}
-
-function naiveModuloPartitioner(kVPairList, numOfChunks) {
-  var groupedList = _.groupBy(kVPairList, function(obj) {
-    return obj.key;
-  });
-  var partitionedList = [];
-  var keys = Object.keys(groupedList);
-  keys.forEach(function(value, index) {
-    var newIndex = index % numOfChunks;
-    if (!partitionedList[newIndex]) {
-      partitionedList[newIndex] = [];
-    }
-
-    partitionedList[newIndex] = partitionedList[newIndex].concat(groupedList[value]);
-  });
-  return partitionedList;
-}
-
 //Serve Reducer Input
-//ToDo: Move partitioning to the mapperOutput endpoint. Partition right after recieving input
 app.get('/reducerInput', function(req, res) {
-  if (!getPartitionedFlag()) {
-    //Partition Stuff Before Reducing
-    //Combiner
-    var unCombinedPairs = getReducerPairs();
-    var combinedPairs = combiner(unCombinedPairs);
-    //Sorter
-    sort(combinedPairs);
-    setPartitionedFlag(true);
-    setReducerPairs(naiveModuloPartitioner(combinedPairs, numberOfReducers));
-  }
-  var kVPairs = getReducerPairs();
+  var kVPairs = getReducerPartitions();
   var kV = kVPairs.shift();
   var result = kV ? kV : [];
   //Return the list
