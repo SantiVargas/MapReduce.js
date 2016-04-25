@@ -5,6 +5,7 @@ var _ = require('lodash');
 //Setup multer for file uploads
 var multer = require('multer');
 //Configuration Variables
+//ToDo: Move these to a file
 var uploadDirectory = 'uploads/';
 var numberOfMappers = 16;
 var numberOfReducers = 16;
@@ -16,7 +17,7 @@ app.use(express.static(uploadDirectory));
 app.use(bodyParser.json());
 
 //Allow Cross Origin Requests
-app.use(function(req, res, next) {
+app.use(function (req, res, next) {
   res.header("Access-Control-Allow-Origin", "*");
   res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
   next();
@@ -43,24 +44,26 @@ function getLocals(key) {
 }
 
 //Storage Values/Functions
+var mapperDataKey = 'mapperPairs';
+var reducerDataKey = 'reducerPairs';
+var finalDataKey = 'finalPairs';
 var mapperDataDefault = [];
 var reducerDataDefault = {
   keys: {},
   partitions: []
 };
-var mapperDataKey = 'mapperPairs';
-var reducerDataKey = 'reducerPairs';
+var finalDataDefault = [];
 
-function setMapperPairs(kvList) {
-  setLocals(mapperDataKey, kvList);
+function setMapperPairs(data) {
+  setLocals(mapperDataKey, data);
 }
 
 function getMapperPairs() {
   return getLocals(apperDataKey);
 }
 
-function setReducerData(kvList) {
-  setLocals(reducerDataKey, kvList);
+function setReducerData(data) {
+  setLocals(reducerDataKey, data);
 }
 
 function getReducerData() {
@@ -71,18 +74,28 @@ function getReducerPartitions() {
   return getReducerData().partitions;
 }
 
+function setFinalData(data) {
+  setLocals(finalDataKey, data);
+}
+
+function getFinalData() {
+  return getLocals(finalDataKey);
+}
+
 function resetStorageValues() {
   //Clear stored mapper data
   setMapperPairs(mapperDataDefault);
   //Clear reducer data
   setReducerData(reducerDataDefault);
+  //Clear final data
+  setFinalData(finalDataDefault);
 }
 
 //Combining, Partitioning, and Distributing Functions
 function partitionCombiner(currentData, newPairs, numOfPartitions, callback) {
   currentData = currentData || reducerDataDefault;
   //Get the value
-  newPairs.forEach(function(current) {
+  newPairs.forEach(function (current) {
     //Partitioner
     var key = current.key;
     //Assign the key to a partition
@@ -104,12 +117,12 @@ function partitionCombiner(currentData, newPairs, numOfPartitions, callback) {
 }
 
 function naiveModuloPartitioner(kVPairList, numOfChunks) {
-  var groupedList = _.groupBy(kVPairList, function(obj) {
+  var groupedList = _.groupBy(kVPairList, function (obj) {
     return obj.key;
   });
   var partitionedList = [];
   var keys = Object.keys(groupedList);
-  keys.forEach(function(value, index) {
+  keys.forEach(function (value, index) {
     var newIndex = index % numOfChunks;
     if (!partitionedList[newIndex]) {
       partitionedList[newIndex] = [];
@@ -133,15 +146,20 @@ function evenSequentialDistributer(numOfChunks, array) {
   return chunkedArray;
 }
 
+function concatCombiner(oldArray, newArray, callback) {
+  var result = oldArray.concat(newArray);
+  return callback(result);
+}
+
 //Endpoint to upload a file by name and extension
-app.post('/upload/:extension/:fileName', function(req, res, next) {
+app.post('/upload/:extension/:fileName', function (req, res, next) {
   var fileFieldName = 'uploadFile';
 
   //Apply the multer middleware 
   var genericFileUploader = multer({
     storage: multer.diskStorage({
       destination: uploadDirectory, //When using a string, multer will automatically create the directory for us
-      filename: function(req, file, cb) {
+      filename: function (req, file, cb) {
         var fileName = req.params.fileName;
         var fileExtension = req.params.extension;
         cb(null, fileName + '.' + fileExtension);
@@ -149,7 +167,7 @@ app.post('/upload/:extension/:fileName', function(req, res, next) {
     })
   });
   genericFileUploader.single(fileFieldName)(req, res, next);
-}, function(req, res) {
+}, function (req, res) {
   //After uploading
   return res.send('Congrats');
 });
@@ -163,7 +181,7 @@ app.post('/upload/:extension/:fileName', function(req, res, next) {
 //     "value": "whether tis nobler in the mind to suffer"
 //   }]
 //Get Input
-app.post('/mapperInput', function(req, res) {
+app.post('/mapperInput', function (req, res) {
   //Reset storage to default values
   resetStorageValues();
   //Get the key value pairs from the input
@@ -176,7 +194,7 @@ app.post('/mapperInput', function(req, res) {
 });
 
 //Serve Mapper Input
-app.get('/mapperInput', function(req, res) {
+app.get('/mapperInput', function (req, res) {
   //Get all key value pairs
   var kVPairs = getMapperPairs();
   var kV = kVPairs.shift();
@@ -206,7 +224,7 @@ app.get('/mapperInput', function(req, res) {
 //   "value": "1"
 // }]
 //Recieve Mapper Output
-app.post('/mapperOutput', function(req, res) {
+app.post('/mapperOutput', function (req, res) {
   //Get the key value pairs from the input
   var kVPairs = req.body;
   //Store the input
@@ -216,7 +234,7 @@ app.post('/mapperOutput', function(req, res) {
 });
 
 //Serve Reducer Input
-app.get('/reducerInput', function(req, res) {
+app.get('/reducerInput', function (req, res) {
   var kVPairs = getReducerPartitions();
   var kV = kVPairs.shift();
   var result = kV ? kV : [];
@@ -224,9 +242,25 @@ app.get('/reducerInput', function(req, res) {
   return res.json(result);
 });
 
+//Recieve Reducer Output
+app.post('/reducerOutput', function (req, res) {
+  //Get the key value pairs from the input
+  var kVPairs = req.body;
+  //Append the reducer data
+  concatCombiner(getFinalData(), kVPairs, setFinalData);
+  return res.json('Received Reducer Output');
+});
+
+//Show Reducer Output
+app.get('/reducerOutput', function (req, res) {
+  //Return the list
+  var finalData = getFinalData() || finalDataDefault;
+  return res.json(finalData);
+});
+
 //Master with push capability
 //ToDo
 
-app.listen(3000, function() {
+app.listen(3000, function () {
   console.log('Example app listening on port 3000!');
 });
