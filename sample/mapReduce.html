@@ -1,11 +1,26 @@
 <html>
-  <head>
-    <script   src="https://code.jquery.com/jquery-2.2.3.min.js"   integrity="sha256-a23g1Nt4dtEYOj7bR+vTu7+T8VP13humZFBJNIYoEJo="   crossorigin="anonymous"></script>
-    <script type="text/javascript" src="sampleMapReduce.js"></script>
-  </head>
-  <body>
-    <h3>MapReduce Input</h3>
-    <textarea id="mapinput" rows="10" cols="50" placeholder="JSON Key Value Array"></textarea>
-    <button id="mapinputbutton" type="button">Submit MapReduce Input</button>
-  </body>
+
+<head>
+  <script src="https://code.jquery.com/jquery-2.2.3.min.js" integrity="sha256-a23g1Nt4dtEYOj7bR+vTu7+T8VP13humZFBJNIYoEJo="
+    crossorigin="anonymous"></script>
+  <script type="text/javascript" src="sampleMapReduce.js"></script>
+</head>
+
+<body>
+  <h3>MapReduce Input</h3>
+  <textarea id="mapinput" rows="10" cols="100" placeholder="JSON Key Value Array"></textarea>
+  <button id="mapinputbutton" type="button">Submit MapReduce Input</button>
+  <h3>Mapper Code</h3>
+  <textarea id="mapcode" rows="10" cols="100" placeholder="Javascript Function"></textarea>
+  <button id="mapcodebutton" type="button">Run Mapper</button>
+  <p id="mapperoutput"></p>
+  <h3>Reducer Code</h3>
+  <textarea id="reducercode" rows="10" cols="100" placeholder="Javascript Function"></textarea>
+  <button id="reducercodebutton" type="button">Run Reducer</button>
+  <p id="reduceroutput"></p>
+  <h3>Output</h3>
+  <button id="outputbutton" type="button">Show Output</button>
+  <p id="outputarea"></p>
+</body>
+
 </html>

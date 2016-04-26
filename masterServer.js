@@ -5,12 +5,13 @@ var _ = require('lodash');
 //Setup multer for file uploads
 var multer = require('multer');
 //Configuration Variables
-//ToDo: Move these to a file
+//ToDo: Move these to a config file
 var uploadDirectory = 'uploads/';
 var numberOfMappers = 16;
 var numberOfReducers = 16;
 
 //Master without push capability
+app.use(express.static('sample/'));
 //Make the uploadDirectory a static directory so that it can be accessed publicly
 app.use(express.static(uploadDirectory));
 //Use the bodyParser
@@ -59,7 +60,7 @@ function setMapperPairs(data) {
 }
 
 function getMapperPairs() {
-  return getLocals(apperDataKey);
+  return getLocals(mapperDataKey);
 }
 
 function setReducerData(data) {
@@ -138,10 +139,10 @@ function evenSequentialDistributer(numOfChunks, array) {
   var elementsPerChunk = Math.floor(length / numOfChunks);
   var chunksWithRemainder = length % numOfChunks;
   var chunkedArray = [];
-  for (var i = 0; i < numOfChunks; i++) {
-    var startingIndex = elementsPerChunk * i;
-    var endingIndex = startingIndex + elementsPerChunk + (i < chunksWithRemainder);
-    chunkedArray.push(array.slice(startingIndex, endingIndex));
+  for (var i = 0, currentIndex = 0; i < numOfChunks; i++) {
+    var endingIndex = currentIndex + elementsPerChunk + (i < chunksWithRemainder);
+    chunkedArray.push(array.slice(currentIndex, endingIndex));
+    currentIndex = endingIndex;
   }
   return chunkedArray;
 }
@@ -235,9 +236,9 @@ app.post('/mapperOutput', function (req, res) {
 
 //Serve Reducer Input
 app.get('/reducerInput', function (req, res) {
-  var kVPairs = getReducerPartitions();
-  var kV = kVPairs.shift();
-  var result = kV ? kV : [];
+  var partitions = getReducerPartitions();
+  var firstPartition = partitions.shift();
+  var result = firstPartition ? firstPartition : [];
   //Return the list
   return res.json(result);
 });
@@ -247,6 +248,7 @@ app.post('/reducerOutput', function (req, res) {
   //Get the key value pairs from the input
   var kVPairs = req.body;
   //Append the reducer data
+  //ToDo: Ensure that multiple calls does not lose data... Hmm, reminds me of message queues and event driven stuff
   concatCombiner(getFinalData(), kVPairs, setFinalData);
   return res.json('Received Reducer Output');
 });
