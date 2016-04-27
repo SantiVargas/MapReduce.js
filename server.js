@@ -2,6 +2,8 @@ var express = require('express');
 var bodyParser = require('body-parser');
 var app = express();
 var _ = require('lodash');
+//Store Values across requests in app.locals
+var mapReduceStorage = require('./memoryModel')(app.locals);
 //Setup multer for file uploads
 var multer = require('multer');
 //Configuration Variables
@@ -34,67 +36,8 @@ app.use(function (req, res, next) {
 //Reducer
 //Output
 
-//App.Locals Values/Functions
-//ToDo: Keys could be stored in some other storage mechanism
-function setLocals(key, value) {
-  app.locals[key] = value;
-}
-
-function getLocals(key) {
-  return app.locals[key];
-}
-
-//Storage Values/Functions
-var mapperDataKey = 'mapperPairs';
-var reducerDataKey = 'reducerPairs';
-var finalDataKey = 'finalPairs';
-var mapperDataDefault = [];
-var reducerDataDefault = {
-  keys: {},
-  partitions: []
-};
-var finalDataDefault = [];
-
-function setMapperPairs(data) {
-  setLocals(mapperDataKey, data);
-}
-
-function getMapperPairs() {
-  return getLocals(mapperDataKey);
-}
-
-function setReducerData(data) {
-  setLocals(reducerDataKey, data);
-}
-
-function getReducerData() {
-  return getLocals(reducerDataKey);
-}
-
-function getReducerPartitions() {
-  return getReducerData().partitions;
-}
-
-function setFinalData(data) {
-  setLocals(finalDataKey, data);
-}
-
-function getFinalData() {
-  return getLocals(finalDataKey);
-}
-
-function resetStorageValues() {
-  //Clear stored mapper data
-  setMapperPairs(mapperDataDefault);
-  //Clear reducer data
-  setReducerData(reducerDataDefault);
-  //Clear final data
-  setFinalData(finalDataDefault);
-}
-
 //Combining, Partitioning, and Distributing Functions
 function partitionCombiner(currentData, newPairs, numOfPartitions, callback) {
-  currentData = currentData || reducerDataDefault;
   //Get the value
   newPairs.forEach(function (current) {
     //Partitioner
@@ -184,20 +127,20 @@ app.post('/upload/:extension/:fileName', function (req, res, next) {
 //Get Input
 app.post('/mapperInput', function (req, res) {
   //Reset storage to default values
-  resetStorageValues();
+  mapReduceStorage.resetStorageValues();
   //Get the key value pairs from the input
   var kVPairs = req.body;
   //Predistribute the mapper pairs
   var kVChunks = evenSequentialDistributer(numberOfMappers, kVPairs);
   //Store the input
-  setMapperPairs(kVChunks);
+  mapReduceStorage.setMapperPairs(kVChunks);
   return res.send("Recieved Input");
 });
 
 //Serve Mapper Input
 app.get('/mapperInput', function (req, res) {
   //Get all key value pairs
-  var kVPairs = getMapperPairs();
+  var kVPairs = mapReduceStorage.getMapperPairs();
   var kV = kVPairs.shift();
   var result = kV ? kV : [];
   //Return the list
@@ -230,13 +173,13 @@ app.post('/mapperOutput', function (req, res) {
   var kVPairs = req.body;
   //Store the input
   //ToDo: Ensure that multiple calls does not lose data... Hmm, reminds me of message queues and event driven stuff
-  partitionCombiner(getReducerData(), kVPairs, numberOfReducers, setReducerData);
+  partitionCombiner(mapReduceStorage.getReducerData(), kVPairs, numberOfReducers, mapReduceStorage.setReducerData);
   return res.send("Recieved Input");
 });
 
 //Serve Reducer Input
 app.get('/reducerInput', function (req, res) {
-  var partitions = getReducerPartitions();
+  var partitions = mapReduceStorage.getReducerPartitions();
   var firstPartition = partitions.shift();
   var result = firstPartition ? firstPartition : [];
   //Return the list
@@ -249,14 +192,14 @@ app.post('/reducerOutput', function (req, res) {
   var kVPairs = req.body;
   //Append the reducer data
   //ToDo: Ensure that multiple calls does not lose data... Hmm, reminds me of message queues and event driven stuff
-  concatCombiner(getFinalData(), kVPairs, setFinalData);
+  concatCombiner(mapReduceStorage.getFinalData(), kVPairs, mapReduceStorage.setFinalData);
   return res.json('Received Reducer Output');
 });
 
 //Show Reducer Output
 app.get('/reducerOutput', function (req, res) {
   //Return the list
-  var finalData = getFinalData() || finalDataDefault;
+  var finalData = mapReduceStorage.getFinalData();
   return res.json(finalData);
 });
 
