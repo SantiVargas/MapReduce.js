@@ -42,20 +42,24 @@ $(document).ready(function () {
     })
       .done(function (data, status) {
         console.log("D", JSON.stringify(data))
-        var result = mapperFunction(data);
-        console.log("R", JSON.stringify(result))
-        $(mapperOutputAreaId).text(JSON.stringify(result));
+        if (data.success && data.data.length) {//Check if its an empty list
+          var result = mapperFunction(data.data);
+          console.log("R", JSON.stringify(result))
+          $(mapperOutputAreaId).text(JSON.stringify(result));
 
-        $.post({
-          url: mapReduceMapperOutputURL,
-          contentType: "application/json; charset=utf-8",
-          data: JSON.stringify(result)
-        })
-          .fail(function (req, status) {
-            alert("Map Reduce Mapper Output Post Failure");
-            console.log(JSON.stringify(result));
-            console.log(status);
-          });
+          $.post({
+            url: mapReduceMapperOutputURL,
+            contentType: "application/json; charset=utf-8",
+            data: JSON.stringify({ data: result })
+          })
+            .fail(function (req, status) {
+              alert("Map Reduce Mapper Output Post Failure");
+              console.log(JSON.stringify(result));
+              console.log(status);
+            });
+        } else {
+          $(mapperOutputAreaId).text("Nothing to map!");
+        }
       })
       .fail(function (req, status) {
         alert("Map Reduce Mapper Input Request Failure");
@@ -72,19 +76,23 @@ $(document).ready(function () {
     })
       .done(function (data, status) {
         console.log("Data", JSON.stringify(data))
-        var result = reducerFunction(data);
-        $(reducerOutputAreaId).text(JSON.stringify(result));
+        if (data.success && data.data.length) {
+          var result = reducerFunction(data.data);
+          $(reducerOutputAreaId).text(JSON.stringify(result));
 
-        $.post({
-          url: mapReduceReducerOutputURL,
-          contentType: "application/json; charset=utf-8",
-          data: JSON.stringify(result)
-        })
-          .fail(function (req, status) {
-            alert("Map Reduce Reducer Output Post Failure");
-            console.log(JSON.stringify(result));
-            console.log(status);
-          });
+          $.post({
+            url: mapReduceReducerOutputURL,
+            contentType: "application/json; charset=utf-8",
+            data: JSON.stringify(result)
+          })
+            .fail(function (req, status) {
+              alert("Map Reduce Reducer Output Post Failure");
+              console.log(JSON.stringify(result));
+              console.log(status);
+            });
+        } else {
+          $(reducerOutputAreaId).text("Nothing to reduce!");
+        }
       })
       .fail(function (req, status) {
         alert("Map Reduce Reducer Input Request Failure");

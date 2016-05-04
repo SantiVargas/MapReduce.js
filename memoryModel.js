@@ -4,12 +4,21 @@ var rootStorage;
 var mapperDataKey = 'mapperPairs';
 var reducerDataKey = 'reducerPairs';
 var finalDataKey = 'finalPairs';
+var jobIdKey = 'jobId';
+var mapperChunksCountKey = 'mapperChunksCount';
+var mapperOutputReceivedCountKey = 'mapperOutputReceivedCount';
+var reducerChunksCountKey = 'reducerChunksCount';
+var reducerOutputReceivedCountKey = 'reducerOutputReceivedCount';
 var mapperDataDefault = [];
-var reducerDataDefault = {
-  keys: {},
-  partitions: []
+var reducerDataDefault = function () {
+  return {
+    keys: {},
+    partitions: []
+  };
 };
 var finalDataDefault = [];
+var jobIdDefault = undefined;
+var countDefaults = 0;
 
 module.exports = Model = function (rootStorageVariable) {
   rootStorage = rootStorageVariable;
@@ -23,6 +32,46 @@ function setStorage(key, value) {
 function getStorage(key) {
   return rootStorage[key];
 }
+
+Model.setMapperChunksCount = function (count) {
+  setStorage(mapperChunksCountKey, count);
+};
+
+Model.setMapperOutputReceivedCount = function (count) {
+  setStorage(mapperOutputReceivedCountKey, count);
+};
+
+Model.setReducerChunksCount = function (count) {
+  setStorage(reducerChunksCountKey, count);
+};
+
+Model.setReducerOutputReceivedCount = function (count) {
+  setStorage(reducerOutputReceivedCountKey, count);
+};
+
+Model.getMapperChunksCount = function () {
+  return getStorage(mapperChunksCountKey);
+};
+
+Model.getMapperOutputReceivedCount = function () {
+  return getStorage(mapperOutputReceivedCountKey);
+};
+
+Model.getReducerChunksCount = function () {
+  return getStorage(reducerChunksCountKey);
+};
+
+Model.getReducerOutputReceivedCount = function () {
+  return getStorage(reducerOutputReceivedCountKey);
+};
+
+Model.setJobId = function (id) {
+  setStorage(jobIdKey, id);
+};
+
+Model.getJobId = function () {
+  return getStorage(jobIdKey);
+};
 
 Model.setMapperPairs = function (data) {
   setStorage(mapperDataKey, data);
@@ -53,10 +102,17 @@ Model.getFinalData = function () {
 };
 
 Model.resetStorageValues = function () {
+  //Clear job id
+  Model.setJobId(jobIdDefault);
+  //Clear counts
+  Model.setMapperChunksCount(countDefaults);
+  Model.setMapperOutputReceivedCount(countDefaults);
+  Model.setReducerChunksCount(countDefaults);
+  Model.setReducerOutputReceivedCount(countDefaults);
   //Clear stored mapper data
   Model.setMapperPairs(mapperDataDefault);
   //Clear reducer data
-  Model.setReducerData(reducerDataDefault);
+  Model.setReducerData(reducerDataDefault());
   //Clear final data
   Model.setFinalData(finalDataDefault);
 };

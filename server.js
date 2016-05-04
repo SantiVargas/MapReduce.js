@@ -82,7 +82,7 @@ function evenSequentialDistributer(numOfChunks, array) {
   var elementsPerChunk = Math.floor(length / numOfChunks);
   var chunksWithRemainder = length % numOfChunks;
   var chunkedArray = [];
-  for (var i = 0, currentIndex = 0; i < numOfChunks; i++) {
+  for (var i = 0, currentIndex = 0; length > currentIndex; i++) {
     var endingIndex = currentIndex + elementsPerChunk + (i < chunksWithRemainder);
     chunkedArray.push(array.slice(currentIndex, endingIndex));
     currentIndex = endingIndex;
@@ -116,25 +116,53 @@ app.post('/upload/:extension/:fileName', function (req, res, next) {
   return res.send('Congrats');
 });
 
+//Reset Storage
+app.get('/reset', function (req, res) {
+  //Reset storage to default values
+  mapReduceStorage.resetStorageValues();
+  //Send a success JSON response
+  var response = {
+    success: true
+  };
+  return res.json(response);
+});
+
+//ToDo: Endpoint to make output -> input and set id 
+
 //Sample JSON Input
-// [{
-//     "key": "hamlet.txt",
-//     "value": "to be or not to be that is the question"
-//   }, {
-//     "key": "hamlet.txt",
-//     "value": "whether tis nobler in the mind to suffer"
-//   }]
+// {
+// 	"data": [{
+// 		"key": "hamlet.txt",
+// 		"value": "to be or not to be that is the question"
+// 	}, {
+// 		"key": "hamlet.txt",
+// 		"value": "whether tis nobler in the mind to suffer"
+// 	}],
+// 	"id": 1
+// }
 //Get Input
 app.post('/mapperInput', function (req, res) {
   //Reset storage to default values
   mapReduceStorage.resetStorageValues();
   //Get the key value pairs from the input
-  var kVPairs = req.body;
+  var kVPairs = req.body.data;
+  //Get the job id from post body
+  var jobId = req.body.id;
   //Predistribute the mapper pairs
   var kVChunks = evenSequentialDistributer(numberOfMappers, kVPairs);
   //Store the input
   mapReduceStorage.setMapperPairs(kVChunks);
-  return res.send("Recieved Input");
+  //Store size of mapperChunks
+  var sizeOfMapperChunks = kVChunks.length;
+  mapReduceStorage.setMapperChunksCount(sizeOfMapperChunks);
+  //Store the job id
+  mapReduceStorage.setJobId(jobId);
+  //Send a success JSON response
+  var response = {
+    success: true,
+    id: jobId
+  };
+  return res.json(response);
 });
 
 //Serve Mapper Input
@@ -142,65 +170,127 @@ app.get('/mapperInput', function (req, res) {
   //Get all key value pairs
   var kVPairs = mapReduceStorage.getMapperPairs();
   var kV = kVPairs.shift();
-  var result = kV ? kV : [];
+  var list = kV ? kV : [];
+  //Get the job id and serve it with the output
+  var jobId = mapReduceStorage.getJobId();
   //Return the list
+  var result = {
+    success: true,
+    data: list,
+    id: jobId
+  };
   return res.json(result);
 });
 
 //Sample JSON Input
-// [{
-//   "key": "to",
-//   "value": "1"
-// }, {
-//   "key": "be",
-//   "value": "1"
-// }, {
-//   "key": "or",
-//   "value": "1"
-// }, {
-//   "key": "not",
-//   "value": "1"
-// }, {
-//   "key": "to",
-//   "value": "1"
-// }, {
-//   "key": "be",
-//   "value": "1"
-// }]
-//Recieve Mapper Output
+// {
+// 	"data": [{
+// 		"key": "to",
+// 		"value": "1"
+// 	}, {
+// 		"key": "be",
+// 		"value": "1"
+// 	}, {
+// 		"key": "or",
+// 		"value": "1"
+// 	}, {
+// 		"key": "not",
+// 		"value": "1"
+// 	}, {
+// 		"key": "to",
+// 		"value": "1"
+// 	}, {
+// 		"key": "be",
+// 		"value": "1"
+// 	}]
+// }
+//Receive Mapper Output
 app.post('/mapperOutput', function (req, res) {
   //Get the key value pairs from the input
-  var kVPairs = req.body;
+  var kVPairs = req.body.data;
+  //Increase and save the mapperOutputReceivedCount
+  var currentCount = mapReduceStorage.getMapperOutputReceivedCount();
+  currentCount++;
+  mapReduceStorage.setMapperOutputReceivedCount(currentCount);
   //Store the input
   //ToDo: Ensure that multiple calls does not lose data... Hmm, reminds me of message queues and event driven stuff
-  partitionCombiner(mapReduceStorage.getReducerData(), kVPairs, numberOfReducers, mapReduceStorage.setReducerData);
-  return res.send("Recieved Input");
+  partitionCombiner(mapReduceStorage.getReducerData(), kVPairs, numberOfReducers, function (data) {
+    var mapperOutputSent = mapReduceStorage.getMapperChunksCount();
+    //If received the last mapperOutput then set the reducerChunksCount
+    if (mapperOutputSent === currentCount) {
+      mapReduceStorage.setReducerChunksCount(data.partitions.length);
+    }
+    mapReduceStorage.setReducerData(data);
+  });
+  //Send a success JSON response
+  var response = {
+    success: true
+  };
+  return res.json(response);
 });
 
 //Serve Reducer Input
 app.get('/reducerInput', function (req, res) {
-  var partitions = mapReduceStorage.getReducerPartitions();
-  var firstPartition = partitions.shift();
-  var result = firstPartition ? firstPartition : [];
-  //Return the list
+  //Get the job id and serve it with the output
+  var jobId = mapReduceStorage.getJobId();
+  var result = {
+    success: false,
+    data: [],
+    id: jobId
+  };
+  //Check to see if all the mapper output was received 
+  var mapperOutputSent = mapReduceStorage.getMapperChunksCount();
+  var mapperOutputReceived = mapReduceStorage.getMapperOutputReceivedCount();
+  if (mapperOutputSent === mapperOutputReceived) {
+    var partitions = mapReduceStorage.getReducerPartitions();
+    var firstPartition = partitions.shift();
+    var partition = firstPartition ? firstPartition : [];
+
+    //Populate the results
+    result.success = true;
+    result.data = partition;
+  }
   return res.json(result);
 });
 
-//Recieve Reducer Output
+//Receive Reducer Output
 app.post('/reducerOutput', function (req, res) {
   //Get the key value pairs from the input
   var kVPairs = req.body;
   //Append the reducer data
   //ToDo: Ensure that multiple calls does not lose data... Hmm, reminds me of message queues and event driven stuff
   concatCombiner(mapReduceStorage.getFinalData(), kVPairs, mapReduceStorage.setFinalData);
-  return res.json('Received Reducer Output');
+  //Increase and save the reducer output received count
+  var currentCount = mapReduceStorage.getReducerOutputReceivedCount();
+  currentCount++;
+  mapReduceStorage.setReducerOutputReceivedCount(currentCount);
+  //Send a success JSON response
+  var response = {
+    success: true
+  };
+  return res.json(response);
 });
 
 //Show Reducer Output
 app.get('/reducerOutput', function (req, res) {
-  //Return the list
-  var finalData = mapReduceStorage.getFinalData();
-  return res.json(finalData);
+  //Get the job id and serve it with the output
+  var jobId = mapReduceStorage.getJobId();
+  //Result when reducing is not finished
+  var result = {
+    success: false,
+    data: [],
+    id: jobId
+  };
+  //Check to see if all the reducer output was received 
+  var reducerOutputSent = mapReduceStorage.getReducerChunksCount();
+  var reducerOutputReceived = mapReduceStorage.getReducerOutputReceivedCount();
+  if (reducerOutputSent === reducerOutputReceived) {
+    var finalData = mapReduceStorage.getFinalData();
+    //Return the final list
+    result.success = true;
+    result.data = finalData;
+  }
+  return res.json(result);
 });
 
 //Master with push capability
